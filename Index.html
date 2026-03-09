@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <title>QA Receiving System</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+</head>
+<body class="bg-light">
+  <div class="container mt-4 mb-5">
+    <div class="card shadow-sm">
+      <div class="card-header bg-primary text-white text-center">
+        <h4>บันทึกการตรวจรับสินค้า (QA Receiving)</h4>
+      </div>
+      <div class="card-body">
+        <form id="qaForm" onsubmit="handleFormSubmit(event)">
+          <div class="mb-3">
+            <label class="form-label">ผู้ตรวจสอบ (Inspector)</label>
+            <input type="text" id="inspector" class="form-control" readonly required>
+          </div>
+
+          <h5 class="text-secondary mt-4">1. ข้อมูลการจัดส่ง</h5>
+          <div class="mb-3">
+            <label class="form-label">ซัพพลายเออร์ (Supplier)</label>
+            <select id="supplierId" class="form-select" required>
+              <option value="">กำลังโหลดข้อมูล...</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">ทะเบียนรถ (Vehicle Reg.)</label>
+            <input type="text" id="vehicleReg" class="form-control" required>
+          </div>
+          
+          <div class="row">
+            <div class="col-6 mb-3">
+              <label class="form-label">ความสะอาดรถ</label>
+              <select id="vehicleClean" class="form-select"><option>Pass</option><option>Fail</option></select>
+            </div>
+            <div class="col-6 mb-3">
+              <label class="form-label">สัตว์พาหะ</label>
+              <select id="pestCheck" class="form-select"><option>Pass</option><option>Fail</option></select>
+            </div>
+          </div>
+
+          <h5 class="text-secondary mt-4">2. ข้อมูลสินค้า</h5>
+          <div class="mb-3">
+            <label class="form-label">สินค้า (Item)</label>
+            <select id="itemId" class="form-select" required>
+              <option value="">กำลังโหลดข้อมูล...</option>
+            </select>
+          </div>
+          <div class="row">
+            <div class="col-6 mb-3">
+              <label class="form-label">Lot/Batch No.</label>
+              <input type="text" id="lotNo" class="form-control" required>
+            </div>
+            <div class="col-6 mb-3">
+              <label class="form-label">อุณหภูมิทดสอบ 1 (°C)</label>
+              <input type="number" step="0.1" id="temp1" class="form-control">
+            </div>
+          </div>
+
+          <h5 class="text-secondary mt-4">3. สรุปผลการตรวจสอบ</h5>
+          <div class="mb-3">
+            <label class="form-label fw-bold">QA Status</label>
+            <select id="qaStatus" class="form-select fw-bold text-primary" onchange="toggleRejectReason()" required>
+              <option value="Approve">Approve (ผ่าน)</option>
+              <option value="Reject">Reject (ไม่ผ่าน/ตีกลับ)</option>
+            </select>
+          </div>
+          <div class="mb-3 d-none" id="rejectReasonDiv">
+            <label class="form-label text-danger">สาเหตุที่ตีกลับ (Reject Reason)</label>
+            <textarea id="rejectReason" class="form-control" rows="2" placeholder="ระบุสาเหตุ..."></textarea>
+          </div>
+
+          <button type="submit" class="btn btn-primary w-100 mt-3" id="submitBtn">บันทึกข้อมูล</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 1. กำหนด LIFF ID
+    const LIFF_ID = "2009360135-QkgogHEI"; 
+
+    // เริ่มต้นระบบ
+    window.onload = function() {
+      initializeLiff();
+      loadMasterData();
+    };
+
+    function initializeLiff() {
+      liff.init({ liffId: LIFF_ID }).then(() => {
+        if (!liff.isLoggedIn()) {
+          liff.login();
+        } else {
+          liff.getProfile().then(profile => {
+            document.getElementById('inspector').value = profile.displayName + " (QA)";
+          });
+        }
+      }).catch(err => console.error(err));
+    }
+
+    // ดึงข้อมูลเชื่อมโยงจาก Google Sheets มาอัปเดตบนเว็บ (ยืดหยุ่น)
+    function loadMasterData() {
+      google.script.run.withSuccessHandler(function(data) {
+        // อัปเดต Supplier Dropdown
+        const supplierSelect = document.getElementById('supplierId');
+        supplierSelect.innerHTML = '<option value="">-- เลือก Supplier --</option>';
+        data.suppliers.forEach(s => {
+          supplierSelect.innerHTML += `<option value="${s.id}">${s.id} - ${s.name}</option>`;
+        });
+
+        // อัปเดต Item Dropdown
+        const itemSelect = document.getElementById('itemId');
+        itemSelect.innerHTML = '<option value="">-- เลือก Item --</option>';
+        data.items.forEach(i => {
+          itemSelect.innerHTML += `<option value="${i.id}">${i.id} - ${i.name}</option>`;
+        });
+      }).getMasterData();
+    }
+
+    function toggleRejectReason() {
+      const status = document.getElementById('qaStatus').value;
+      const rejectDiv = document.getElementById('rejectReasonDiv');
+      const rejectInput = document.getElementById('rejectReason');
+      
+      if(status === 'Reject') {
+        rejectDiv.classList.remove('d-none');
+        rejectInput.required = true;
+        document.getElementById('qaStatus').classList.replace('text-primary', 'text-danger');
+      } else {
+        rejectDiv.classList.add('d-none');
+        rejectInput.required = false;
+        rejectInput.value = '';
+        document.getElementById('qaStatus').classList.replace('text-danger', 'text-primary');
+      }
+    }
+
+    // บันทึกข้อมูล
+    function handleFormSubmit(e) {
+      e.preventDefault();
+      
+      document.getElementById('submitBtn').disabled = true;
+      document.getElementById('submitBtn').innerHTML = 'กำลังบันทึก...';
+
+      const formData = {
+        inspector: document.getElementById('inspector').value,
+        supplierId: document.getElementById('supplierId').value,
+        vehicleReg: document.getElementById('vehicleReg').value,
+        vehicleClean: document.getElementById('vehicleClean').value,
+        pestCheck: document.getElementById('pestCheck').value,
+        itemId: document.getElementById('itemId').value,
+        lotNo: document.getElementById('lotNo').value,
+        temp1: document.getElementById('temp1').value,
+        qaStatus: document.getElementById('qaStatus').value,
+        rejectReason: document.getElementById('rejectReason').value,
+        // (คุณสามารถเพิ่ม Field อื่นๆ ให้ครบตาม HTML Form ได้ที่นี่)
+      };
+
+      // ส่งข้อมูลไปหลังบ้าน
+      google.script.run.withSuccessHandler(function(res) {
+        if(res.success) {
+          alert('บันทึกสำเร็จ! รหัสอ้างอิง: ' + res.receiptId);
+          document.getElementById('qaForm').reset();
+          toggleRejectReason(); // รีเซ็ตการแสดงผล
+        } else {
+          alert('เกิดข้อผิดพลาด: ' + res.message);
+        }
+        document.getElementById('submitBtn').disabled = false;
+        document.getElementById('submitBtn').innerHTML = 'บันทึกข้อมูล';
+      }).submitReceivingData(formData);
+    }
+  </script>
+</body>
+</html>
